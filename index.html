@@ -1,214 +1,183 @@
+cd Satoramy
+
+cat > index.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SATORAMY — Monolith</title>
+<title>SATORAMY CLI</title>
 <style>
-  :root { --bg:#0a0a0a; --fg:#e0e0e0; --acc:#00ff88; --warn:#ff5577; --dim:#666; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:'SF Mono',Consolas,monospace; background:var(--bg); color:var(--fg); padding:20px; }
-  h1 { color:var(--acc); font-size:1.4em; margin:0 0 4px; }
-  .sub { color:var(--dim); font-size:.85em; margin-bottom:20px; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  .panel { border:1px solid #222; padding:14px; border-radius:6px; }
-  .panel h2 { font-size:.95em; color:var(--acc); margin:0 0 10px; }
-  input, button, textarea { font-family:inherit; font-size:.9em; }
-  input[type=text] { width:100%; padding:8px; background:#111; border:1px solid #333; color:var(--fg); border-radius:4px; }
-  button { padding:8px 14px; background:var(--acc); color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-right:6px; margin-top:6px; }
-  button.sec { background:#333; color:var(--fg); }
-  button.warn { background:var(--warn); color:#000; }
-  .block { border-left:3px solid var(--acc); padding:8px 12px; margin:8px 0; background:#111; font-size:.8em; }
-  .block .idx { color:var(--acc); font-weight:bold; }
-  .block .hash { color:var(--dim); word-break:break-all; }
-  .pill { display:inline-block; padding:1px 6px; border-radius:3px; background:#222; color:var(--dim); margin-right:4px; font-size:.85em; }
-  .pill.pos { background:#0a3; color:#000; }
-  .pill.neg { background:#a03; color:#fff; }
-  .pill.zero { background:#333; color:var(--dim); }
-  #log { max-height:400px; overflow-y:auto; font-size:.8em; }
-  .kernel-ok { color:var(--acc); }
-  .kernel-bad { color:var(--warn); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background:#000; color:#0f0; font-family:'SF Mono',Consolas,monospace;
+         font-size:14px; overflow:hidden; display:flex; flex-direction:column; }
+  #header { background:#001100; border-bottom:1px solid #0f0; padding:8px 16px;
+            display:flex; justify-content:space-between; font-size:12px; flex-shrink:0; }
+  #title { color:#0f0; font-weight:bold; }
+  #status { color:#666; } #status.online { color:#0f0; } #status.offline { color:#f44; }
+  #output { flex:1; overflow-y:auto; padding:12px 16px; white-space:pre-wrap;
+            word-break:break-all; line-height:1.5; font-size:13px; }
+  .cmd { color:#0f0; } .ok { color:#0f0; } .err { color:#f44; }
+  .warn { color:#fa0; } .dim { color:#666; } .info { color:#0af; }
+  .accent { color:#0f0; font-weight:bold; }
+  #inputline { border-top:1px solid #0f0; background:#001100; padding:8px 16px;
+               display:flex; align-items:center; flex-shrink:0; }
+  #prompt-sym { color:#0f0; margin-right:8px; font-weight:bold; }
+  #cmd { flex:1; background:transparent; border:none; color:#0f0; font-family:inherit;
+         font-size:14px; outline:none; caret-color:#0f0; }
 </style>
 </head>
 <body>
-
-<h1>SATORAMY — Monolith</h1>
-<div class="sub">single-file · offline · dual · DUAL-9 · R=W=2 · ω=π/2</div>
-
-<div class="grid">
-  <div class="panel">
-    <h2>▸ Block hinzufügen</h2>
-    <input type="text" id="dataInput" placeholder="data (z.B. RFOF-NETWORK)" />
-    <button onclick="addBlock()">+ add</button>
-    <button class="sec" onclick="addAutonom()">+ autonom</button>
-    <button class="sec" onclick="addCycle()">+ zyklus</button>
-
-    <h2 style="margin-top:20px">▸ Kette</h2>
-    <div id="chain"></div>
-
-    <h2 style="margin-top:20px">▸ Aktionen</h2>
-    <button class="sec" onclick="verify()">✓ verify</button>
-    <button class="sec" onclick="exportJSON()">↧ export</button>
-    <button class="sec" onclick="importJSON()">↥ import</button>
-    <button class="warn" onclick="reset()">⟲ reset</button>
-  </div>
-
-  <div class="panel">
-    <h2>▸ Kern-Status (DUAL-9)</h2>
-    <div id="kernel"></div>
-
-    <h2 style="margin-top:20px">▸ Log</h2>
-    <div id="log"></div>
-
-    <h2 style="margin-top:20px">▸ Export / Transfer</h2>
-    <textarea id="exportOut" rows="10" style="width:100%;background:#111;color:var(--fg);border:1px solid #333;border-radius:4px;padding:8px" readonly></textarea>
-  </div>
+<div id="header">
+  <div id="title">SATORAMY · X·X·∞ = 1·∞</div>
+  <div id="status">○ prüfe…</div>
 </div>
-
+<div id="output"></div>
+<div id="inputline">
+  <span id="prompt-sym">&gt;</span>
+  <input id="cmd" autofocus autocomplete="off" spellcheck="false" />
+</div>
 <script>
-const R = 2, OMEGA = Math.PI / 2, MOD = 1e12;
-const STORAGE = "satoramy_monolith_v1";
-const WORDS = ["eins","zwei","drei","vier","fünf","sechs","sieben","acht","neun"];
+const out = document.getElementById("output");
+const cmdInput = document.getElementById("cmd");
+const statusEl = document.getElementById("status");
+let history = [], histIdx = -1;
 
-function kappa(n) { return Math.floor(R * Math.sin(OMEGA * n)); }
-
-function hashBlock(prev, n, data, nonce) {
-  const sigma = [...data].reduce((a,c)=>a + c.codePointAt(0), 0);
-  const flat  = Math.round(n*31 + prev + sigma + nonce) % MOD;
-  const k     = kappa(n);
-  return { flat, k, hp: (flat + k) % MOD, hm: (flat - k) % MOD, sigma };
+function line(t, c = "") {
+  const d = document.createElement("div");
+  d.className = "line " + c; d.textContent = t;
+  out.appendChild(d); out.scrollTop = out.scrollHeight;
 }
-
-function genesis() {
-  const data = "SATORAMY::GENESIS::2D=3D::X²=1";
-  const sigma = [...data].reduce((a,c)=>a + c.codePointAt(0), 0);
-  return { index:0, prev_hash:0, data, nonce:42, sigma,
-           kappa:0, flat:sigma+42, hp:sigma+42, hm:sigma+42 };
+async function api(p, o) {
+  const r = await fetch(p, o);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
 }
-
-let chain = load();
-
-function load() {
-  try { const s = localStorage.getItem(STORAGE); return s ? JSON.parse(s) : [genesis()]; }
-  catch { return [genesis()]; }
-}
-function save() { localStorage.setItem(STORAGE, JSON.stringify(chain)); }
-function head() { return chain[chain.length - 1]; }
-
-function addBlock(data) {
-  if (!data) return;
-  const n = chain.length, prev = head().hp, nonce = n;
-  const h = hashBlock(prev, n, data, nonce);
-  chain.push({ index:n, prev_hash:prev, data, nonce,
-               sigma:h.sigma, kappa:h.k, flat:h.flat, hp:h.hp, hm:h.hm });
-  save(); render();
-  log(`+ #${n}  "${data}"  κ=${h.k}  h⁺=${h.hp}  h⁻=${h.hm}`);
-}
-
-function addAutonom() {
-  const idx = head().hp % 9;
-  addBlock(WORDS[idx]);
-}
-
-function addCycle() {
-  const base = prompt("Basis für Zyklus (4 Blöcke):", "Zyklus") || "Zyklus";
-  ["[T]","[A]","[G]","[A2]"].forEach(m => addBlock(base + " " + m));
-}
-
-function verify() {
-  let ok = true, bad = -1;
-  for (let i = 1; i < chain.length; i++) {
-    const b = chain[i], p = chain[i-1];
-    const h = hashBlock(p.hp, b.index, b.data, b.nonce);
-    if (h.hp !== b.hp || h.hm !== b.hm || b.prev_hash !== p.hp) { ok = false; bad = i; break; }
-  }
-  log(ok ? "✓ Kette verifiziert — alle " + chain.length + " Blöcke gültig"
-         : "✗ FEHLER bei Block " + bad);
-}
-
-function kernelCheck() {
-  const n = chain.length - 1, b = head();
-  const rules = [
-    ["A Zyklus",  n>=4 && b.hp === chain[n-4].hp],
-    ["B Alter",   n >= 1000],
-    ["C extern",  false],
-    ["D Retro",   false],
-    ["E Spiegel", false],
-    ["6 Kollaps", b.hp === b.hm],
-    ["7 σ=0",     b.sigma === 0],
-    ["8 Grenze",  Math.abs(b.hp - b.hm) === 4 && n % 4 === 0],
-    ["9 Airgap",  b.hp % 2 === 0]
-  ];
-  const fired = rules.filter(r => r[1]);
-  document.getElementById("kernel").innerHTML =
-    rules.map(([name,on]) =>
-      `<div class="${on?'kernel-bad':'kernel-ok'}">${on?'●':'○'} ${name}</div>`
-    ).join("") +
-    `<div style="margin-top:10px;color:${fired.length?'#ff5577':'#00ff88'};font-weight:bold">` +
-    (fired.length ? `STOPP: ${fired.map(r=>r[0]).join(", ")}` : "läuft") + `</div>`;
-}
-
-function exportJSON() {
-  const out = {
-    protocol: "SATORAMY-MONOLITH", version: "1.0",
-    blocks: chain.length, head_plus: head().hp, head_minus: head().hm,
-    rules: { R, OMEGA:"π/2", MOD, kappa:"floor(R*sin(OMEGA*n))",
-             flat:"n*31 + prev + sigma + nonce", hp:"flat+kappa", hm:"flat-kappa",
-             kernel:"DUAL-9" },
-    chain
-  };
-  const txt = JSON.stringify(out, null, 2);
-  document.getElementById("exportOut").value = txt;
-  navigator.clipboard?.writeText(txt).catch(()=>{});
-  log("↧ Export erstellt (" + chain.length + " Blöcke) — in Clipboard");
-}
-
-function importJSON() {
-  const txt = prompt("JSON einfügen:");
-  if (!txt) return;
+async function checkServer() {
   try {
-    const obj = JSON.parse(txt);
-    const arr = Array.isArray(obj) ? obj : obj.chain;
-    if (!Array.isArray(arr) || !arr.length) throw "leer";
-    chain = arr; save(); render();
-    log(`↥ ${chain.length} Blöcke importiert — head=${head().hp}`);
-  } catch (e) { log("✗ Import: " + e); }
+    const j = await api("/api/status");
+    statusEl.textContent = "● online · " + j.blocks + " Blöcke";
+    statusEl.className = "online"; return true;
+  } catch {
+    statusEl.textContent = "● offline";
+    statusEl.className = "offline"; return false;
+  }
 }
-
-function reset() {
-  if (!confirm("Kette löschen und Genesis neu?")) return;
-  chain = [genesis()]; save(); render(); log("⟲ Reset auf Genesis");
+async function boot() {
+  line("╔══════════════════════════════════════════════╗", "accent");
+  line("║      SATORAMY · X·X·∞ = 1·∞ · CLI                    ║", "accent");
+  line("╚══════════════════════════════════════════════╝", "accent");
+  line("");
+  if (await checkServer()) line("✓ Server verbunden", "ok");
+  else { line("✗ Server nicht erreichbar", "err");
+         line("  Starte: python3 satoramy.py", "warn"); }
+  line("");
+  line("Tippe 'help' für alle Befehle.", "dim");
+  line("");
 }
-
-function render() {
-  document.getElementById("chain").innerHTML =
-    chain.slice().reverse().map(b => `
-      <div class="block">
-        <span class="idx">#${b.index}</span>
-        <span class="pill ${b.kappa>0?'pos':b.kappa<0?'neg':'zero'}">κ=${b.kappa}</span>
-        <span class="pill">σ=${b.sigma}</span>
-        <div style="margin:4px 0">${escapeHtml(b.data)}</div>
-        <div class="hash">h⁺ ${b.hp} · h⁻ ${b.hm}</div>
-      </div>`).join("");
-  kernelCheck();
+async function run(raw) {
+  const input = raw.trim(); if (!input) return;
+  line("> " + input, "cmd");
+  const [cmd, ...args] = input.split(/\s+/);
+  const c = cmd.toLowerCase();
+  try {
+    switch (c) {
+      case "help":
+        line("Befehle:", "accent");
+        line("  help          — diese Liste");
+        line("  status        — Server-Status");
+        line("  chain         — gesamte Kette");
+        line("  ls            — Kette kompakt");
+        line("  get <n>       — Block n");
+        line("  add <data>    — neuen Block");
+        line("  verify        — Kette prüfen");
+        line("  reset         — DB zurücksetzen");
+        line("  export        — JSON herunterladen");
+        line("  ping          — Verbindung prüfen");
+        line("  clear         — Ausgabe löschen");
+        break;
+      case "clear": out.innerHTML = ""; break;
+      case "ping": line(await checkServer() ? "✓ pong" : "✗ offline"); break;
+      case "status": line(JSON.stringify(await api("/api/status"), null, 2), "info"); break;
+      case "chain": {
+        const ch = await api("/api/chain");
+        line("Kette: " + ch.length + " Blöcke", "accent");
+        for (const b of ch)
+          line("  #" + String(b.idx).padStart(3) + " x=" + (b.x > 0 ? "+" : "-") + "1  " + b.data + "  [" + b.hash + "]");
+        break;
+      }
+      case "ls": {
+        for (const b of await api("/api/chain"))
+          line("#" + String(b.idx).padStart(3) + " " + (b.x > 0 ? "+" : "-") + " " + b.hash + "  " + b.data.substring(0, 40));
+        break;
+      }
+      case "get": {
+        const n = parseInt(args[0]);
+        if (isNaN(n)) { line("✗ get <n>", "err"); break; }
+        const b = (await api("/api/chain")).find(x => x.idx === n);
+        if (!b) { line("✗ nicht gefunden", "err"); break; }
+        line(JSON.stringify(b, null, 2), "info");
+        break;
+      }
+      case "add": {
+        const data = args.length ? args.join(" ") : "auto-" + Date.now();
+        const r = await api("/api/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data })
+        });
+        line("✓ Block #" + r.idx + "  x=" + (r.x > 0 ? "+" : "-") + "1  hash=" + r.hash, "ok");
+        await checkServer();
+        break;
+      }
+      case "verify": {
+        const v = await api("/api/verify");
+        if (v.valid) line("✓ gültig · " + v.blocks + " Blöcke · product=" + v.product + " · closed=" + v.closed, "ok");
+        else line("✗ fehlerhaft bei #" + v.bad, "err");
+        break;
+      }
+      case "reset":
+        if (!confirm("Alle Blöcke löschen?")) { line("abgebrochen", "dim"); break; }
+        await api("/api/reset"); line("✓ zurückgesetzt", "ok"); await checkServer(); break;
+      case "export": {
+        const ch = await api("/api/chain");
+        const blob = new Blob([JSON.stringify(ch, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "satoramy_chain.json";
+        a.click();
+        line("✓ " + ch.length + " Blöcke exportiert", "ok");
+        break;
+      }
+      default:
+        line("✗ Unbekannt: " + c, "err");
+        line("  Tippe 'help'", "dim");
+    }
+  } catch (e) {
+    line("✗ Fehler: " + e.message, "err");
+    line("  Server läuft? -> python3 satoramy.py", "warn");
+    await checkServer();
+  }
 }
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-}
-
-function log(msg) {
-  const el = document.getElementById("log");
-  const t = new Date().toLocaleTimeString();
-  el.innerHTML = `<div>[${t}] ${escapeHtml(msg)}</div>` + el.innerHTML;
-}
-
-document.getElementById("dataInput").addEventListener("keydown", e => {
-  if (e.key === "Enter") { addBlock(e.target.value.trim()); e.target.value = ""; }
+cmdInput.addEventListener("keydown", async e => {
+  if (e.key === "Enter") {
+    const v = cmdInput.value; cmdInput.value = "";
+    if (v.trim()) { history.push(v); histIdx = history.length; }
+    await run(v);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (histIdx > 0) { histIdx--; cmdInput.value = history[histIdx]; }
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (histIdx < history.length - 1) { histIdx++; cmdInput.value = history[histIdx]; }
+    else { histIdx = history.length; cmdInput.value = ""; }
+  }
 });
-
-render();
-log(`geladen: ${chain.length} Blöcke · head h⁺=${head().hp}`);
+document.addEventListener("click", () => cmdInput.focus());
+boot();
+setInterval(checkServer, 5000);
 </script>
 </body>
 </html>
+HTMLEOF
