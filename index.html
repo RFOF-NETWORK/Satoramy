@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SATORAMY — Monolith</title>
+<style>
+  :root { --bg:#0a0a0a; --fg:#e0e0e0; --acc:#00ff88; --warn:#ff5577; --dim:#666; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'SF Mono',Consolas,monospace; background:var(--bg); color:var(--fg); padding:20px; }
+  h1 { color:var(--acc); font-size:1.4em; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:.85em; margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .panel { border:1px solid #222; padding:14px; border-radius:6px; }
+  .panel h2 { font-size:.95em; color:var(--acc); margin:0 0 10px; }
+  input, button, textarea { font-family:inherit; font-size:.9em; }
+  input[type=text] { width:100%; padding:8px; background:#111; border:1px solid #333; color:var(--fg); border-radius:4px; }
+  button { padding:8px 14px; background:var(--acc); color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-right:6px; margin-top:6px; }
+  button.sec { background:#333; color:var(--fg); }
+  button.warn { background:var(--warn); color:#000; }
+  .block { border-left:3px solid var(--acc); padding:8px 12px; margin:8px 0; background:#111; font-size:.8em; }
+  .block .idx { color:var(--acc); font-weight:bold; }
+  .block .hash { color:var(--dim); word-break:break-all; }
+  .pill { display:inline-block; padding:1px 6px; border-radius:3px; background:#222; color:var(--dim); margin-right:4px; font-size:.85em; }
+  .pill.pos { background:#0a3; color:#000; }
+  .pill.neg { background:#a03; color:#fff; }
+  .pill.zero { background:#333; color:var(--dim); }
+  #log { max-height:400px; overflow-y:auto; font-size:.8em; }
+  .kernel-ok { color:var(--acc); }
+  .kernel-bad { color:var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>SATORAMY — Monolith</h1>
+<div class="sub">single-file · offline · dual · DUAL-9 · R=W=2 · ω=π/2</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>▸ Block hinzufügen</h2>
+    <input type="text" id="dataInput" placeholder="data (z.B. RFOF-NETWORK)" />
+    <button onclick="addBlock()">+ add</button>
+    <button class="sec" onclick="addAutonom()">+ autonom</button>
+    <button class="sec" onclick="addCycle()">+ zyklus</button>
+
+    <h2 style="margin-top:20px">▸ Kette</h2>
+    <div id="chain"></div>
+
+    <h2 style="margin-top:20px">▸ Aktionen</h2>
+    <button class="sec" onclick="verify()">✓ verify</button>
+    <button class="sec" onclick="exportJSON()">↧ export</button>
+    <button class="sec" onclick="importJSON()">↥ import</button>
+    <button class="warn" onclick="reset()">⟲ reset</button>
+  </div>
+
+  <div class="panel">
+    <h2>▸ Kern-Status (DUAL-9)</h2>
+    <div id="kernel"></div>
+
+    <h2 style="margin-top:20px">▸ Log</h2>
+    <div id="log"></div>
+
+    <h2 style="margin-top:20px">▸ Export / Transfer</h2>
+    <textarea id="exportOut" rows="10" style="width:100%;background:#111;color:var(--fg);border:1px solid #333;border-radius:4px;padding:8px" readonly></textarea>
+  </div>
+</div>
+
+<script>
+const R = 2, OMEGA = Math.PI / 2, MOD = 1e12;
+const STORAGE = "satoramy_monolith_v1";
+const WORDS = ["eins","zwei","drei","vier","fünf","sechs","sieben","acht","neun"];
+
+function kappa(n) { return Math.floor(R * Math.sin(OMEGA * n)); }
+
+function hashBlock(prev, n, data, nonce) {
+  const sigma = [...data].reduce((a,c)=>a + c.codePointAt(0), 0);
+  const flat  = Math.round(n*31 + prev + sigma + nonce) % MOD;
+  const k     = kappa(n);
+  return { flat, k, hp: (flat + k) % MOD, hm: (flat - k) % MOD, sigma };
+}
+
+function genesis() {
+  const data = "SATORAMY::GENESIS::2D=3D::X²=1";
+  const sigma = [...data].reduce((a,c)=>a + c.codePointAt(0), 0);
+  return { index:0, prev_hash:0, data, nonce:42, sigma,
+           kappa:0, flat:sigma+42, hp:sigma+42, hm:sigma+42 };
+}
+
+let chain = load();
+
+function load() {
+  try { const s = localStorage.getItem(STORAGE); return s ? JSON.parse(s) : [genesis()]; }
+  catch { return [genesis()]; }
+}
+function save() { localStorage.setItem(STORAGE, JSON.stringify(chain)); }
+function head() { return chain[chain.length - 1]; }
+
+function addBlock(data) {
+  if (!data) return;
+  const n = chain.length, prev = head().hp, nonce = n;
+  const h = hashBlock(prev, n, data, nonce);
+  chain.push({ index:n, prev_hash:prev, data, nonce,
+               sigma:h.sigma, kappa:h.k, flat:h.flat, hp:h.hp, hm:h.hm });
+  save(); render();
+  log(`+ #${n}  "${data}"  κ=${h.k}  h⁺=${h.hp}  h⁻=${h.hm}`);
+}
+
+function addAutonom() {
+  const idx = head().hp % 9;
+  addBlock(WORDS[idx]);
+}
+
+function addCycle() {
+  const base = prompt("Basis für Zyklus (4 Blöcke):", "Zyklus") || "Zyklus";
+  ["[T]","[A]","[G]","[A2]"].forEach(m => addBlock(base + " " + m));
+}
+
+function verify() {
+  let ok = true, bad = -1;
+  for (let i = 1; i < chain.length; i++) {
+    const b = chain[i], p = chain[i-1];
+    const h = hashBlock(p.hp, b.index, b.data, b.nonce);
+    if (h.hp !== b.hp || h.hm !== b.hm || b.prev_hash !== p.hp) { ok = false; bad = i; break; }
+  }
+  log(ok ? "✓ Kette verifiziert — alle " + chain.length + " Blöcke gültig"
+         : "✗ FEHLER bei Block " + bad);
+}
+
+function kernelCheck() {
+  const n = chain.length - 1, b = head();
+  const rules = [
+    ["A Zyklus",  n>=4 && b.hp === chain[n-4].hp],
+    ["B Alter",   n >= 1000],
+    ["C extern",  false],
+    ["D Retro",   false],
+    ["E Spiegel", false],
+    ["6 Kollaps", b.hp === b.hm],
+    ["7 σ=0",     b.sigma === 0],
+    ["8 Grenze",  Math.abs(b.hp - b.hm) === 4 && n % 4 === 0],
+    ["9 Airgap",  b.hp % 2 === 0]
+  ];
+  const fired = rules.filter(r => r[1]);
+  document.getElementById("kernel").innerHTML =
+    rules.map(([name,on]) =>
+      `<div class="${on?'kernel-bad':'kernel-ok'}">${on?'●':'○'} ${name}</div>`
+    ).join("") +
+    `<div style="margin-top:10px;color:${fired.length?'#ff5577':'#00ff88'};font-weight:bold">` +
+    (fired.length ? `STOPP: ${fired.map(r=>r[0]).join(", ")}` : "läuft") + `</div>`;
+}
+
+function exportJSON() {
+  const out = {
+    protocol: "SATORAMY-MONOLITH", version: "1.0",
+    blocks: chain.length, head_plus: head().hp, head_minus: head().hm,
+    rules: { R, OMEGA:"π/2", MOD, kappa:"floor(R*sin(OMEGA*n))",
+             flat:"n*31 + prev + sigma + nonce", hp:"flat+kappa", hm:"flat-kappa",
+             kernel:"DUAL-9" },
+    chain
+  };
+  const txt = JSON.stringify(out, null, 2);
+  document.getElementById("exportOut").value = txt;
+  navigator.clipboard?.writeText(txt).catch(()=>{});
+  log("↧ Export erstellt (" + chain.length + " Blöcke) — in Clipboard");
+}
+
+function importJSON() {
+  const txt = prompt("JSON einfügen:");
+  if (!txt) return;
+  try {
+    const obj = JSON.parse(txt);
+    const arr = Array.isArray(obj) ? obj : obj.chain;
+    if (!Array.isArray(arr) || !arr.length) throw "leer";
+    chain = arr; save(); render();
+    log(`↥ ${chain.length} Blöcke importiert — head=${head().hp}`);
+  } catch (e) { log("✗ Import: " + e); }
+}
+
+function reset() {
+  if (!confirm("Kette löschen und Genesis neu?")) return;
+  chain = [genesis()]; save(); render(); log("⟲ Reset auf Genesis");
+}
+
+function render() {
+  document.getElementById("chain").innerHTML =
+    chain.slice().reverse().map(b => `
+      <div class="block">
+        <span class="idx">#${b.index}</span>
+        <span class="pill ${b.kappa>0?'pos':b.kappa<0?'neg':'zero'}">κ=${b.kappa}</span>
+        <span class="pill">σ=${b.sigma}</span>
+        <div style="margin:4px 0">${escapeHtml(b.data)}</div>
+        <div class="hash">h⁺ ${b.hp} · h⁻ ${b.hm}</div>
+      </div>`).join("");
+  kernelCheck();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function log(msg) {
+  const el = document.getElementById("log");
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML = `<div>[${t}] ${escapeHtml(msg)}</div>` + el.innerHTML;
+}
+
+document.getElementById("dataInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") { addBlock(e.target.value.trim()); e.target.value = ""; }
+});
+
+render();
+log(`geladen: ${chain.length} Blöcke · head h⁺=${head().hp}`);
+</script>
+</body>
+</html>
